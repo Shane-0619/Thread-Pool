@@ -1,0 +1,88 @@
+#ifndef THREADPOOL_H
+#define THREADPOOL_H
+
+#include <vector>
+#include <memory>
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+
+//任务抽象基类
+//用户自定义任务类型，从task继承，重写run方法，实现自定义任务处理
+class Task
+{
+public:
+    virtual void run() = 0;
+};
+
+//线程池支持的模式
+enum class PoolMode
+{
+    MOD_FIXED,      //固定数量的线程
+    MOD_CACHED,     //线程数量可动态增长
+};
+
+//线程类型
+class Thread
+{
+public:
+    //线程函数对象类型
+    using ThreadFunc = std::function<void()>;
+    
+    //线程构造
+    Thread(ThreadFunc func);
+
+    //线程析构
+    ~Thread();
+
+    //线程启动
+    void start();
+private:
+    ThreadFunc func_;
+};
+
+//线程池类型
+class ThreadPool
+{
+public:
+    //线程池构造
+    ThreadPool();
+
+    //线程池析构
+    ~ThreadPool();
+
+    //设置线程池的工作模式
+    void setMode(PoolMode mode);
+
+    //设置任务队列上限阈值
+    void setTaskQueMaxThreshHold(size_t threshhold);
+
+    //向线程池提交任务
+    void submitTask(std::shared_ptr<Task> sp);
+
+    //开启线程池
+    void start(size_t initThreadSize = 4);
+
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
+private:
+    //线程函数
+    void threadFunc();
+private:
+    std::vector<Thread*> threads_;  //线程队列
+    size_t initThreadSize_; //初始的线程数量
+
+    std::vector<std::shared_ptr<Task>> taskQue_; //任务队列
+    std::atomic_uint taskSize_;  //任务数量
+    size_t taskQueMaxThreshHold_;   //任务队列的上限阈值
+
+    std::mutex tashQueMtx_; //保证任务队列的线程安全
+    std::condition_variable notFull_;   //任务队列不满
+    std::condition_variable notEmpty;   //任务队列不空
+
+    PoolMode poolMode_; //当前线程池的工作模式
+};
+
+
+#endif
