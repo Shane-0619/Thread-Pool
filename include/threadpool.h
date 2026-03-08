@@ -2,6 +2,7 @@
 #define THREADPOOL_H
 
 #include <vector>
+#include <queue>
 #include <memory>
 #include <atomic>
 #include <mutex>
@@ -70,16 +71,16 @@ private:
     //线程函数
     void threadFunc();
 private:
-    std::vector<Thread*> threads_;  //线程队列
+    std::vector<std::unique_ptr<Thread>> threads_;  //线程队列
     size_t initThreadSize_; //初始的线程数量
 
-    std::vector<std::shared_ptr<Task>> taskQue_; //任务队列
+    std::queue<std::shared_ptr<Task>> taskQue_; //任务队列
     std::atomic_uint taskSize_;  //任务数量
     size_t taskQueMaxThreshHold_;   //任务队列的上限阈值
 
-    std::mutex tashQueMtx_; //保证任务队列的线程安全
+    std::mutex taskQueMtx_; //保证任务队列的线程安全
     std::condition_variable notFull_;   //任务队列不满
-    std::condition_variable notEmpty;   //任务队列不空
+    std::condition_variable notEmpty_;   //任务队列不空
 
     PoolMode poolMode_; //当前线程池的工作模式
 };
