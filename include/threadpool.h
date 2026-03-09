@@ -9,6 +9,68 @@
 #include <condition_variable>
 #include <functional>
 
+//Any类型：可以接受任意数据类型
+class Any
+{
+public:
+    Any() = default;
+    ~Any() = default;
+    Any(const Any&) = delete;
+    Any& operator=(const Any&) = delete;
+    
+    Any(Any&&) = default;
+    Any& operator=(Any&&) = default;
+
+    template<typename T>
+    Any(T data) : base_(std::make_unique<Derive>(data))
+    {}
+
+    template<typename T>
+    T cast()
+    {
+        Derive<T> *pd = dynamic_cast<Derive<T>*>(base_.get());
+        if(pd == nullptr)
+        {
+            throw "Data type doesn't match!";
+        }
+        return pd->data_;
+    }
+    
+private:
+    class Base
+    {
+        virtual ~Base() = default;
+    };
+    template<typename T>
+    class Derive : public Base
+    {
+    public:
+        Base(T data) : data_(data)
+        {}
+    private:
+        T data_;
+    };
+
+    std::unique_ptr<Base> base_;
+};
+
+//实现信号量类
+class Semaphore
+{
+public:
+    Semaphore(size_t limit = 0) : resLimit_(limit)
+    {}
+    ~Semaphore() = default;
+
+    void wait();
+    void post();
+    
+private:
+    size_t resLimit_;
+    std::mutex mtx_;
+    std::condition_variable cond_;
+};
+
 //任务抽象基类
 //用户自定义任务类型，从task继承，重写run方法，实现自定义任务处理
 class Task

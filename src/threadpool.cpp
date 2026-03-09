@@ -112,6 +112,20 @@ void ThreadPool::threadFunc()
     }
 }
 
+void Semaphore::wait()
+{
+    std::unique_lock<std::mutex> lock(mtx_);
+    cond_.wait(lock, [&]()->bool{ return resLimit_ > 0;});
+    resLimit_--;
+}
+
+void Semaphore::post()
+{
+    std::unique_lock<std::mutex> lock(mtx_);
+    resLimit_++;
+    cond_.notify_all();
+}
+
 ////////////////    线程方法实现
 
 //线程构造
