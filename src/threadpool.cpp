@@ -7,6 +7,28 @@
 
 const size_t TASK_MAX_THRESHHOLD = 1024;
 
+/*                                              Task类实现                                  */
+//Task构造函数
+Task::Task()
+    : result_(nullptr)
+{}
+
+//Task执行函数
+void Task::exec()
+{
+    if(result_!=nullptr)
+    {
+        result_->setVal(run());
+    }
+}
+
+//Task内部关联Result（相互关联）
+void Task::setResult(Result* result)
+{
+    result_ = result;
+}
+
+/*                                              ThreadPool类实现                              */
 //线程池构造
 ThreadPool::ThreadPool()
     : initThreadSize_(0)
@@ -32,7 +54,7 @@ void ThreadPool::setTaskQueMaxThreshHold(size_t threshhold)
 }
 
 //向线程池提交任务
-void ThreadPool::submitTask(std::shared_ptr<Task> sp)
+Result ThreadPool::submitTask(std::shared_ptr<Task> sp)
 {
     std::unique_lock<std::mutex> lock(taskQueMtx_);
 
@@ -40,12 +62,14 @@ void ThreadPool::submitTask(std::shared_ptr<Task> sp)
         [&]()->bool{ return taskQue_.size() < TASK_MAX_THRESHHOLD;}))
     {
         std::cerr << "The task queue is full, submit task fail." << std::endl;
+        return Result(sp, false);
     }
 
     taskQue_.emplace(sp);
     taskSize_++;
 
     notEmpty_.notify_all();
+    return Result(sp);
 }
 
 //开启线程池
@@ -69,17 +93,10 @@ void ThreadPool::start(size_t initThreadSize)
 
 }
 
+
 //线程函数
 void ThreadPool::threadFunc()
-{
-    // std::cout << "begin threadFunc: "
-    //     << std::this_thread::get_id() 
-    //     << std::endl;
-    // std::cout << "end threadFunc: "
-    //     << std::this_thread::get_id()
-    //     << std::endl;
-    
-    
+{    
     for(;;)
     {   
         std::shared_ptr<Task> task; 
@@ -107,11 +124,12 @@ void ThreadPool::threadFunc()
         
         if(task != nullptr)
         {
-            task->run();
+            task->exec();
         }
     }
 }
 
+/*                                              Semaphore类实现                                      */
 void Semaphore::wait()
 {
     std::unique_lock<std::mutex> lock(mtx_);
@@ -126,8 +144,7 @@ void Semaphore::post()
     cond_.notify_all();
 }
 
-////////////////    线程方法实现
-
+/*                                              Thread类实现                                          */
 //线程构造
 Thread::Thread(ThreadFunc func)
     : func_(func)
@@ -136,10 +153,37 @@ Thread::Thread(ThreadFunc func)
 //线程析构
 Thread::~Thread(){}
 
-//启动线程
+//线程启动
 void Thread::start()
 {
     //创建线程执行线程函数
     std::thread t(func_);
     t.detach();
+}
+
+/*                                              Result类相关实现                                        */  
+//Result构造函数
+Result::Result(std::shared_ptr<Task> task, bool isValid)
+    : task_(task)
+    , isValid_(isValid)
+{
+    task_->setResult(this);
+}
+
+//设置Result::val_的值
+void Result::setVal(Any val)
+{
+    this->val_ = std::move(val);
+    sem_.post();
+}
+
+//返回Result::val_
+Any Result::get()
+{
+    if(!isValid_)
+    {
+        return "";
+    }
+    sem_.wait();
+    return std::move(val_);
 }

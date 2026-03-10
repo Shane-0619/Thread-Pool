@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <functional>
 
+
 //Any类型：可以接受任意数据类型
 class Any
 {
@@ -22,7 +23,7 @@ public:
     Any& operator=(Any&&) = default;
 
     template<typename T>
-    Any(T data) : base_(std::make_unique<Derive>(data))
+    Any(T data) : base_(std::make_unique<Derive<T>>(data))
     {}
 
     template<typename T>
@@ -39,19 +40,34 @@ public:
 private:
     class Base
     {
+    public:
         virtual ~Base() = default;
     };
     template<typename T>
     class Derive : public Base
     {
     public:
-        Base(T data) : data_(data)
+        Derive(T data) : data_(data)
         {}
-    private:
         T data_;
     };
 
     std::unique_ptr<Base> base_;
+};
+
+class Result;
+//任务抽象基类
+//用户自定义任务类型，从task继承，重写run方法，实现自定义任务处理
+class Task
+{
+public:
+    Task();
+    ~Task() = default;
+    virtual Any run() = 0;
+    void exec();
+    void setResult(Result* result);
+private:
+    Result* result_;
 };
 
 //实现信号量类
@@ -64,20 +80,32 @@ public:
 
     void wait();
     void post();
-    
+
 private:
     size_t resLimit_;
     std::mutex mtx_;
     std::condition_variable cond_;
 };
 
-//任务抽象基类
-//用户自定义任务类型，从task继承，重写run方法，实现自定义任务处理
-class Task
+//获取任务返回值
+class Result
 {
 public:
-    virtual void run() = 0;
+    Result(std::shared_ptr<Task> task, bool isValid = true);
+
+    ~Result() = default;
+
+    void setVal(Any val);
+
+    Any get();
+private:
+    Any val_;
+    std::shared_ptr<Task> task_;
+    std::atomic_bool isValid_;
+    Semaphore sem_;
 };
+
+
 
 //线程池支持的模式
 enum class PoolMode
@@ -122,7 +150,7 @@ public:
     void setTaskQueMaxThreshHold(size_t threshhold);
 
     //向线程池提交任务
-    void submitTask(std::shared_ptr<Task> sp);
+    Result submitTask(std::shared_ptr<Task> sp);
 
     //开启线程池
     void start(size_t initThreadSize = 4);

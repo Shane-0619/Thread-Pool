@@ -3,33 +3,51 @@
 #include <chrono>
 #include <iostream>
 
+using uLong = unsigned long long;
 class Mytask : public Task
 {
 public:
-    void run()
+    Mytask(int begin, int end)
+        : begin_(begin)
+        , end_(end)
+    {}
+    Any run()
     {
         std::cout << "tid: " << std::this_thread::get_id()
             << " begin!" << std::endl;
+        uLong sum = 0;
+        for(uLong i = begin_; i<=end_; i++)
+        {
+            sum+=i;
+        }
         std::this_thread::sleep_for(std::chrono::seconds(2));
         std::cout << "tid: " << std::this_thread::get_id()
             << " end!" << std::endl;
+        return sum;
     }
+private:
+    int begin_;
+    int end_;
 };
 
 int main()
 {
-    ThreadPool tp;
-    tp.start(4);
+    ThreadPool pool;
+    pool.start(4);
 
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
-    tp.submitTask(std::make_shared<Mytask>());
+    Result res1 = pool.submitTask(std::make_shared<Mytask>(1, 100000000));
+    Result res2 = pool.submitTask(std::make_shared<Mytask>(100000001, 200000000));
+    Result res3 = pool.submitTask(std::make_shared<Mytask>(200000001, 300000000));
+
+    uLong sum1 = res1.get().cast<uLong>();
+    uLong sum2 = res2.get().cast<uLong>();
+    uLong sum3 = res3.get().cast<uLong>();
+
+    std::cout << sum1 + sum2 + sum3 << std::endl;
+
+    // Result result = tp.submitTask(std::make_shared<Mytask>());
+    // int ans = result.get().cast<int>();
+   
 
     // 等待任务完成
     std::this_thread::sleep_for(std::chrono::seconds(5));
