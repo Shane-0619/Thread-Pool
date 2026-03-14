@@ -8,6 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <unordered_map>
 
 
 //Any类型：可以接受任意数据类型
@@ -93,6 +94,13 @@ class Result
 public:
     Result(std::shared_ptr<Task> task, bool isValid = true);
 
+    // Result 可以移动，但不能复制
+    Result(Result&& other) noexcept;
+    Result& operator=(Result&& other) noexcept;
+
+    Result(const Result&) = delete;
+    Result& operator=(const Result&) = delete;
+
     ~Result() = default;
 
     void setVal(Any val);
@@ -104,8 +112,6 @@ private:
     std::atomic_bool isValid_;
     Semaphore sem_;
 };
-
-
 
 //线程池支持的模式
 enum class PoolMode
@@ -119,7 +125,7 @@ class Thread
 {
 public:
     //线程函数对象类型
-    using ThreadFunc = std::function<void()>;
+    using ThreadFunc = std::function<void(size_t)>;
     
     //线程构造
     Thread(ThreadFunc func);
@@ -129,8 +135,13 @@ public:
 
     //线程启动
     void start();
+
+    //获取线程Id
+    size_t getId() const;
 private:
     ThreadFunc func_;
+    static size_t generateId_;
+    size_t threadId_;
 };
 
 //线程池类型
@@ -149,6 +160,9 @@ public:
     //设置任务队列上限阈值
     void setTaskQueMaxThreshHold(size_t threshhold);
 
+    //设置cached模式下线程阈值
+    void setThreadSizeThreshHold(size_t threshhold);
+
     //向线程池提交任务
     Result submitTask(std::shared_ptr<Task> sp);
 
@@ -159,10 +173,18 @@ public:
     ThreadPool& operator=(const ThreadPool&) = delete;
 private:
     //线程函数
-    void threadFunc();
+    void threadFunc(size_t threadId);
+
+    //检查当前线程池的启动状态
+    bool checkRunningState();
 private:
-    std::vector<std::unique_ptr<Thread>> threads_;  //线程队列
+    //std::vector<std::unique_ptr<Thread>> threads_;  //线程列表
+    std::unordered_map<size_t, std::unique_ptr<Thread>> threads_;   //线程列表
+
     size_t initThreadSize_; //初始的线程数量
+    std::atomic_int idleThreadSize_;    //记录空闲线程的数量
+    int threadSizeThreshHold_;  //线程数量上限阈值
+    std::atomic_int curThreadSize_; //当前线程的数量
 
     std::queue<std::shared_ptr<Task>> taskQue_; //任务队列
     std::atomic_uint taskSize_;  //任务数量
@@ -173,6 +195,8 @@ private:
     std::condition_variable notEmpty_;   //任务队列不空
 
     PoolMode poolMode_; //当前线程池的工作模式
+    std::atomic_bool isPoolRunning_;    //当前线程池的启动状态
+
 };
 
 
