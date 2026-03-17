@@ -6,8 +6,8 @@
 #include <mutex>
 
 const size_t TASK_MAX_THRESHHOLD = INT32_MAX;
-const size_t Thread_MAX_THRESHOLD = 10;
-const size_t THREAD_MAX_IDLE_TIME = 60; //单位：秒
+const size_t Thread_MAX_THRESHOLD = 5;
+const size_t THREAD_MAX_IDLE_TIME = 10; //单位：秒
 
 /*                                              Task类实现                                  */
 //Task构造函数
@@ -21,6 +21,10 @@ void Task::exec()
     if(result_!=nullptr)
     {
         result_->setVal(run());
+    }
+    else
+    {
+        run();
     }
 }
 
@@ -45,7 +49,19 @@ ThreadPool::ThreadPool()
 
 //线程池析构
 ThreadPool::~ThreadPool()
-{}
+{
+    isPoolRunning_ = false;
+    
+    {
+        std::unique_lock<std::mutex> lock(taskQueMtx_);
+        notEmpty_.notify_all();
+    }
+
+    for(auto &pair : threads_)
+    {
+        pair.second->join();
+    }
+}
 
 //设置线程池的工作模式
 void ThreadPool::setMode(PoolMode mode)
@@ -119,12 +135,6 @@ void ThreadPool::start(size_t initThreadSize)
         threads_.emplace(threadId, std::move(ptr));
     }
 
-    // for(int i = 0; i < initThreadSize_; i++)
-    // {
-    //     threads_[i]->start();
-    //     idleThreadSize_++;
-    // }
-
     for(auto &pair : threads_)
     {
         pair.second->start();
@@ -146,11 +156,15 @@ void ThreadPool::threadFunc(size_t threadId)
 
             std::cout << "tid: " << std::this_thread::get_id() 
                 << "尝试获取任务......" << std::endl;
-
-            //cached模式下回收多余的线程(空闲时间超过60s)
-            if(poolMode_ == PoolMode::MOD_CACHED)
+            while(taskQue_.size()==0)
             {
-                while(taskQue_.size() == 0)
+                if(!isPoolRunning_)
+                {
+                    std::cout << "threadid: " << std::this_thread::get_id() << " exit" << std::endl;
+                    return;
+                }                
+                //cached模式下回收多余的线程(空闲时间超过60s)
+                if(poolMode_ == PoolMode::MOD_CACHED)
                 {
                     if(std::cv_status::timeout == 
                         notEmpty_.wait_for(lock, std::chrono::seconds(1)))
@@ -160,20 +174,19 @@ void ThreadPool::threadFunc(size_t threadId)
                         if(dur.count() >= THREAD_MAX_IDLE_TIME
                             && curThreadSize_ > initThreadSize_)
                         {
-                            threads_.erase(threadId);
                             curThreadSize_--;
                             idleThreadSize_--;
-
                             std::cout << "threadid: " << std::this_thread::get_id() << " exit" << std::endl;
                             return;
                         }
                     }
                 }
+                else
+                {
+                    notEmpty_.wait(lock);
+                }
             }
-
-            notEmpty_.wait(lock, [&]()->bool{ return taskQue_.size() > 0; });
             idleThreadSize_--;
-
             std::cout << "tid: " << std::this_thread::get_id()
                 << "获取任务成功！" << std::endl;
 
@@ -186,7 +199,6 @@ void ThreadPool::threadFunc(size_t threadId)
                 notEmpty_.notify_all();
             }
             notFull_.notify_all();
-
         }
         
         if(task != nullptr)
@@ -230,13 +242,22 @@ Thread::Thread(ThreadFunc func)
 Thread::~Thread(){}
 
 //线程启动
-void Thread::start() {
+void Thread::start()
+{
     if (!func_) {
         std::cerr << "Thread::start: func_ is empty!" << std::endl;
         return;
     }
-    std::thread t(func_, threadId_);
-    t.detach();
+    
+    thread_ = std::thread(func_, threadId_);
+}
+
+void Thread::join()
+{
+    if(thread_.joinable())
+    {
+        thread_.join();
+    }
 }
 
 //获取线程Id
@@ -277,7 +298,6 @@ Result& Result::operator=(Result&& other) noexcept
         val_ = std::move(other.val_);
         task_ = std::move(other.task_);
         isValid_ = other.isValid_.load();
-        // Semaphore is locally owned; keep our own state
         if(task_)
         {
             task_->setResult(this);
@@ -302,4 +322,12 @@ Any Result::get()
     }
     sem_.wait();
     return std::move(val_);
+}
+
+Result::~Result()
+{
+    if(isValid_ && task_ != nullptr)
+    {
+        task_->setResult(nullptr);
+    }
 }

@@ -101,7 +101,7 @@ public:
     Result(const Result&) = delete;
     Result& operator=(const Result&) = delete;
 
-    ~Result() = default;
+    ~Result();
 
     void setVal(Any val);
 
@@ -136,12 +136,15 @@ public:
     //线程启动
     void start();
 
+    void join();
+
     //获取线程Id
     size_t getId() const;
 private:
     ThreadFunc func_;
     static size_t generateId_;
     size_t threadId_;
+    std::thread thread_;
 };
 
 //线程池类型
